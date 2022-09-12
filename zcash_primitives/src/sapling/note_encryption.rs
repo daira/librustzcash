@@ -2,9 +2,10 @@
 use blake2b_simd::{Hash as Blake2bHash, Params as Blake2bParams};
 use byteorder::{LittleEndian, WriteBytesExt};
 use ff::PrimeField;
-use group::{cofactor::CofactorGroup, GroupEncoding};
+use group::{cofactor::CofactorGroup, FixedWindow, GroupEncoding, Wnaf};
 use jubjub::{AffinePoint, ExtendedPoint};
 use rand_core::RngCore;
+use std::marker::PhantomData;
 
 use zcash_note_encryption::{
     try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ock,
@@ -27,16 +28,23 @@ use crate::{
 pub const KDF_SAPLING_PERSONALIZATION: &[u8; 16] = b"Zcash_SaplingKDF";
 pub const PRF_OCK_PERSONALIZATION: &[u8; 16] = b"Zcash_Derive_ock";
 
+type PreparedWindowSize = FixedWindow<4>;
+type PreparedBase = Wnaf<PreparedWindowSize, Vec<jubjub::ExtendedPoint>, ()>;
+type PreparedScalar = Wnaf<PreparedWindowSize, PhantomData<jubjub::ExtendedPoint>, Vec<i64>>;
+
 /// Sapling key agreement for note encryption.
 ///
 /// Implements section 5.4.4.3 of the Zcash Protocol Specification.
 pub fn sapling_ka_agree(esk: &jubjub::Fr, pk_d: &jubjub::ExtendedPoint) -> jubjub::SubgroupPoint {
+    sapling_ka_agree_prepared(&PreparedScalar::scalar(esk), &PreparedBase::base(*pk_d))
+}
+
+fn sapling_ka_agree_prepared(esk: &PreparedScalar, pk_d: &PreparedBase) -> jubjub::SubgroupPoint {
     // [8 esk] pk_d
     // <ExtendedPoint as CofactorGroup>::clear_cofactor is implemented using
     // ExtendedPoint::mul_by_cofactor in the jubjub crate.
 
-    let mut wnaf = group::Wnaf::new();
-    wnaf.scalar(esk).base(*pk_d).clear_cofactor()
+    pk_d.exp(esk).clear_cofactor()
 }
 
 /// Sapling KDF for note encryption.
@@ -132,12 +140,14 @@ impl<P: consensus::Parameters> Domain for SaplingDomain<P> {
     // points must not be small-order, and all points with non-canonical serialization
     // are small-order.
     type EphemeralPublicKey = jubjub::ExtendedPoint;
+    type PreparedEphemeralPublicKey = PreparedBase;
     type SharedSecret = jubjub::SubgroupPoint;
     type SymmetricKey = Blake2bHash;
     type Note = Note;
     type Recipient = PaymentAddress;
     type DiversifiedTransmissionKey = jubjub::SubgroupPoint;
     type IncomingViewingKey = SaplingIvk;
+    type PreparedIncomingViewingKey = PreparedScalar;
     type OutgoingViewingKey = OutgoingViewingKey;
     type ValueCommitment = jubjub::ExtendedPoint;
     type ExtractedCommitment = bls12_381::Scalar;
@@ -150,6 +160,15 @@ impl<P: consensus::Parameters> Domain for SaplingDomain<P> {
 
     fn get_pk_d(note: &Self::Note) -> Self::DiversifiedTransmissionKey {
         note.pk_d
+    }
+
+    fn prepare_ivk(ivk: Self::IncomingViewingKey) -> Self::PreparedIncomingViewingKey {
+        let SaplingIvk(ivk) = ivk;
+        PreparedScalar::scalar(&ivk)
+    }
+
+    fn prepare_epk(epk: Self::EphemeralPublicKey) -> Self::PreparedEphemeralPublicKey {
+        PreparedBase::base(epk)
     }
 
     fn ka_derive_public(
@@ -172,10 +191,10 @@ impl<P: consensus::Parameters> Domain for SaplingDomain<P> {
     }
 
     fn ka_agree_dec(
-        ivk: &Self::IncomingViewingKey,
-        epk: &Self::EphemeralPublicKey,
+        ivk: &Self::PreparedIncomingViewingKey,
+        epk: &Self::PreparedEphemeralPublicKey,
     ) -> Self::SharedSecret {
-        sapling_ka_agree(&ivk.0, epk)
+        sapling_ka_agree_prepared(ivk, epk)
     }
 
     /// Sapling KDF for note encryption.
@@ -332,13 +351,18 @@ impl<P: consensus::Parameters> BatchDomain for SaplingDomain<P> {
 
     fn batch_epk(
         ephemeral_keys: impl Iterator<Item = EphemeralKeyBytes>,
-    ) -> Vec<(Option<Self::EphemeralPublicKey>, EphemeralKeyBytes)> {
+    ) -> Vec<(Option<Self::PreparedEphemeralPublicKey>, EphemeralKeyBytes)> {
         let ephemeral_keys: Vec<_> = ephemeral_keys.collect();
         let epks = jubjub::AffinePoint::batch_from_bytes(ephemeral_keys.iter().map(|b| b.0));
         epks.into_iter()
             .zip(ephemeral_keys.into_iter())
             .map(|(epk, ephemeral_key)| {
-                (epk.map(jubjub::ExtendedPoint::from).into(), ephemeral_key)
+                (
+                    epk.map(jubjub::ExtendedPoint::from)
+                        .map(Self::prepare_epk)
+                        .into(),
+                    ephemeral_key,
+                )
             })
             .collect()
     }

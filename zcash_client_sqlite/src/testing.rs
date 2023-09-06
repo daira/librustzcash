@@ -320,18 +320,20 @@ where
         )
     }
 
-    /// Reset the wallet using a new wallet database, but with the same cache of blocks.
+    /// Resets the wallet using a new wallet database but with the same cache of blocks,
+    /// and returns the old wallet database file.
     ///
     /// This does not recreate accounts, nor does it rescan the cached blocks.
     /// The resulting wallet has no test account.
     /// Before using any `generate_*` method on the reset state, call `reset_latest_cached_block()`.
-    pub(crate) fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) -> NamedTempFile {
         let network = self.network();
         self.latest_cached_block = None;
-        self._data_file = NamedTempFile::new().unwrap();
+        let tf = std::mem::replace(&mut self._data_file, NamedTempFile::new().unwrap());
         self.db_data = WalletDb::for_path(self._data_file.path(), network).unwrap();
         self.test_account = None;
         init_wallet_db(&mut self.db_data, None).unwrap();
+        tf
     }
 
     /// Reset the latest cached block to the most recent one in the cache database.

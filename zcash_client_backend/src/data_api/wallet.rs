@@ -294,6 +294,7 @@ where
 /// [`sapling::TxProver`]: zcash_primitives::sapling::prover::TxProver
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::type_complexity)]
+#[tracing::instrument(skip(wallet_db, params, prover, input_selector, ovk_policy))]
 pub fn spend<DbT, ParamsT, InputsT>(
     wallet_db: &mut DbT,
     params: &ParamsT,

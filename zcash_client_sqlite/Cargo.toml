@@ -26,6 +26,7 @@ hdwallet = { version = "0.4", optional = true }
 
 # - Logging and metrics
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 
 # - Serialization
 byteorder = "1"

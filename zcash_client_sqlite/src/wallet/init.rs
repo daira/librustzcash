@@ -119,6 +119,7 @@ impl std::error::Error for WalletMigrationError {
 // the library that does not support transparent use. It might be a good idea to add an explicit
 // check for unspent transparent outputs whenever running initialization with a version of the
 // library *not* compiled with the `transparent-inputs` feature flag, and fail if any are present.
+#[tracing::instrument(skip_all)]
 pub fn init_wallet_db<P: consensus::Parameters + 'static>(
     wdb: &mut WalletDb<rusqlite::Connection, P>,
     seed: Option<SecretVec<u8>>,

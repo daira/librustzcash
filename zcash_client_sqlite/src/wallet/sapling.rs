@@ -1128,6 +1128,12 @@ pub(crate) mod tests {
 
     #[test]
     fn external_address_change_spends_detected_in_restore_from_seed() {
+        use tracing_subscriber::{filter, fmt, prelude::*};
+        tracing_subscriber::registry()
+            .with(fmt::layer())
+            .with(filter::EnvFilter::from_default_env())
+            .init();
+
         let mut st = TestBuilder::new().with_block_cache().build();
 
         // Add two accounts to the wallet.

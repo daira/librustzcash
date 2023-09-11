@@ -319,6 +319,36 @@ where
             limit,
         )
     }
+
+    /// Reset the wallet using a new wallet database, but with the same cache of blocks.
+    ///
+    /// This does not recreate accounts, nor does it rescan the cached blocks.
+    /// The resulting wallet has no test account.
+    /// Before using any `generate_*` method on the reset state, call `reset_latest_cached_block()`.
+    pub(crate) fn reset(&mut self) {
+        let network = self.network();
+        self.latest_cached_block = None;
+        self._data_file = NamedTempFile::new().unwrap();
+        self.db_data = WalletDb::for_path(self._data_file.path(), network).unwrap();
+        self.test_account = None;
+        init_wallet_db(&mut self.db_data, None).unwrap();
+    }
+
+    /// Reset the latest cached block to the most recent one in the cache database.
+    #[allow(dead_code)]
+    pub(crate) fn reset_latest_cached_block(&mut self) {
+        self.cache
+            .block_source()
+            .with_blocks::<_, Infallible>(None, None, |block: CompactBlock| {
+                self.latest_cached_block = Some((
+                    BlockHeight::from_u32(block.height.try_into().unwrap()),
+                    BlockHash::from_slice(block.hash.as_slice()),
+                    block.chain_metadata.unwrap().sapling_commitment_tree_size,
+                ));
+                Ok(())
+            })
+            .unwrap();
+    }
 }
 
 impl<Cache> TestState<Cache> {

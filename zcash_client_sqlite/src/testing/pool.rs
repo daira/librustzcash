@@ -305,7 +305,10 @@ pub(crate) fn send_single_step_proposed_transfer<T: ShieldedPoolTester>() {
 #[cfg(feature = "transparent-inputs")]
 pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
     use nonempty::NonEmpty;
-    use zcash_client_backend::proposal::{Proposal, StepOutput, StepOutputIndex};
+    use zcash_client_backend::{
+        fees::ChangeValue,
+        proposal::{Proposal, StepOutput, StepOutputIndex},
+    };
     use zcash_primitives::legacy::keys::IncomingViewingKey;
 
     let mut st = TestBuilder::new()
@@ -317,7 +320,7 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
     let dfvk = T::test_account_fvk(&st);
 
     // Add funds to the wallet in a single note
-    let value = NonNegativeAmount::const_from_u64(65000);
+    let value = NonNegativeAmount::const_from_u64(100000);
     let (h, _, _) = st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
     st.scan_cached_blocks(h, 1);
 
@@ -362,7 +365,14 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
     let min_target_height = proposal0.min_target_height();
     let step0 = &proposal0.steps().head;
 
-    assert!(step0.balance().proposed_change().is_empty());
+    assert_eq!(
+        step0.balance().proposed_change(),
+        [ChangeValue::shielded(
+            T::SHIELDED_PROTOCOL,
+            NonNegativeAmount::const_from_u64(35000),
+            None
+        )]
+    );
     assert_eq!(
         step0.balance().fee_required(),
         NonNegativeAmount::const_from_u64(15000)
@@ -443,7 +453,7 @@ pub(crate) fn send_multi_step_proposed_transfer<T: ShieldedPoolTester>() {
 
     assert_eq!(
         confirmed_sent.get(0).and_then(|v| v.get(0)),
-        Some(&(&txids[0], 50000))
+        Some(&(&txids[0], 35000))
     );
     assert_eq!(
         confirmed_sent.get(1).and_then(|v| v.get(0)),
@@ -904,7 +914,7 @@ pub(crate) fn spend_succeeds_to_t_addr_zero_change<T: ShieldedPoolTester>() {
     let dfvk = T::test_account_fvk(&st);
 
     // Add funds to the wallet in a single note
-    let value = NonNegativeAmount::const_from_u64(60000);
+    let value = NonNegativeAmount::const_from_u64(70000);
     let (h, _, _) = st.generate_next_block(&dfvk, AddressType::DefaultExternal, value);
     st.scan_cached_blocks(h, 1);
 
@@ -951,7 +961,7 @@ pub(crate) fn change_note_spends_succeed<T: ShieldedPoolTester>() {
     let dfvk = T::test_account_fvk(&st);
 
     // Add funds to the wallet in a single note owned by the internal spending key
-    let value = NonNegativeAmount::const_from_u64(60000);
+    let value = NonNegativeAmount::const_from_u64(70000);
     let (h, _, _) = st.generate_next_block(&dfvk, AddressType::Internal, value);
     st.scan_cached_blocks(h, 1);
 
